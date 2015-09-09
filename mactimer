@@ -6,11 +6,12 @@ trap "" SIGTSTP
 TIME=${1:-60}
 GREETING=${2:-Hello}
 GAME=${3:-Something fun}
+VERB=${VERB:-play}
 
 VOICE=${VOICE:-Zarvox}
 
 SAY="say --voice $VOICE"
-DELAY_AFTER_WARNING=${DELAY_AFTER_WARNING:-60}
+DELAY_AFTER_WARNING=${DELAY_AFTER_WARNING:-15}
 
 logged_in_user() {
   stat -f %Su /dev/console
@@ -19,12 +20,21 @@ logged_in_user() {
 lockit() {
   trap 'echo ignored' TERM QUIT INT
   $SAY bye
+  MAX_TRIES=5
+  TRY=0
+
   while true; do
+    if [ $((TRY++)) -gt $MAX_TRIES ]; then 
+	echo $(date) Giving up after $TRY tries
+        $SAY Giving up
+        return; 
+    fi
+
     lock_start=$(date +%s)
     if [ $(logged_in_user) = $USER ]; then
       echo $(date) Locking screen
       $SAY Locking screen
-      nohup /System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend >> /tmp/timer.out </dev/null 2>&1 &
+      nohup /System/Library/CoreServices/Menu\ Extras/User.menu/Contents/Resources/CGSession -suspend >> /tmp/timer.out.$USER </dev/null 2>&1 &
     fi
 
     # give the screen 10 seconds to lock before killing processes
@@ -37,25 +47,50 @@ lockit() {
     done
 
     echo $(date) Screen not locked. Killing programs running as $USER
-    $SAY Killing programs
-    kill -9 $(pgrep -u $USER | grep -vw $$)
+    $SAY Killing programs owned by $(logged_in_user)
+    kill -9 $(pgrep -u $(logged_in_user) | grep -vw $$)
   done
 }
+
+if [ $USER = root ]; then
+  echo "$(date) Cannot run as root"
+  $SAY Cannot run as root
+  exit 1
+fi
 
 # make the screen lock if this timer program exits (prevents ^C, etc)
 trap 'lockit' TERM QUIT EXIT
 
 echo "$(date) Stopping in $TIME minutes"
-$SAY ${GREETING}, it is time to play $GAME
+$SAY ${GREETING}, it is time to $VERB $GAME
 
-if [ $TIME -gt 5 ]; then
-  sleep $(( (TIME-5) * 60))
-  $SAY "5 minutes left"
-  sleep 300
-else
-  sleep $((TIME*60))
-fi
+START=$(date +%s)
+LAST_UPDATE=0
+END=$(( START + TIME*60))
+
+NOW=$(date +%s)
+while [ $NOW -lt $END ]; do
+  # print an update every 5 minutes
+  if [ $(( NOW - LAST_UPDATE )) -gt 300 ]; then
+     LAST_UPDATE=$NOW
+     echo "$(date) Still playing...."
+  fi
+
+  MINUTES_LEFT=$(( (END-NOW)/60 ))
+
+  if [ $MINUTES_LEFT -lt 5 ]; then
+    if [ $MINUTES_LEFT -eq 1 ]; then
+       $SAY "1 minute left"
+    else
+       $SAY "$MINUTES_LEFT minutes left"
+    fi
+  fi
+
+  sleep 60
+  NOW=$(date +%s)
+done
 
 $SAY Sigh, it is time to stop
 sleep $DELAY_AFTER_WARNING
 
+lockit
