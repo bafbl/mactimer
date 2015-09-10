@@ -1,0 +1,19 @@
+#!/bin/bash
+
+if ! type gsync >/dev/null 2>&1; then
+  cat <<EOF
+gsync was not found
+This can be installed as follows:
+   sudo easy_install pip
+   sudo pip install gsync
+EOF
+
+  exit 1
+fi
+
+ME="${BASH_SOURCE[0]}"
+D=$(dirname "$ME")
+
+export GSYNC_CONFIG_DIR=$D/.gsync
+
+gsync "$@"
