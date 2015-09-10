@@ -1,0 +1,69 @@
+#!/bin/bash
+
+set -o errexit
+set -o pipefail
+set -o nounset
+
+ME=${BASH_SOURCE[0]}
+ME_BASENAME=$(basename "$ME")
+D=$(dirname "$ME")
+
+fail() {
+  echo $(date) FATAL: "$@" 1>&2
+  exit 1
+}
+
+if [ -e $D/.mactimer ]; then
+  . $D/.mactimer
+else
+  read -p "What is the name of this computer?" ans
+  [ -z "$ans" ] && exit 1
+  echo "export COMPUTER_NAME='$ans'" > $D/.mactimer
+
+  read -p "Any users that don't need screen capture (separated by spaces)? [root]" ans
+  [ -z "$ans" ] && ans=root
+  echo "export NO_SCREEN_CAPTURE_USERS='$ans'" >> $D/.mactimer
+fi
+
+U=$(stat -f %Su /dev/console)
+
+if grep -qw $U <<<"$NO_SCREEN_CAPTURE_USERS"; then
+  echo $(date): Not capturing screen of $U
+  exit 0
+fi
+
+if [ -e /tmp/no_capture_screen ]; then
+  echo $(date): Not capturing screen: /tmp/no_capture_screen exists
+  exit 0
+fi
+
+SCREEN_SHOT_DIR=/var/tmp/screenshots-$COMPUTER_NAME
+USER_SCREENSHOT_DIR=$SCREEN_SHOT_DIR/$U
+USER_SCREENSHOT_DAY_DIR=$USER_SCREENSHOT_DIR/$(date +%F)
+LOG=$USER_SCREENSHOT_DAY_DIR/$ME_BASENAME.log
+
+mkdir -p $USER_SCREENSHOT_DAY_DIR
+
+echo "All output going to $LOG" 1>&2
+exec >"$LOG" 2>&1
+
+x=$((RANDOM % 30))
+echo $(date) Sleeping $x secs
+sleep $x
+
+LOGINWINDOW_PID=$(pgrep loginwindow)
+
+[ -z "$LOGINWINDOW_PID" ] && fail "Unable to find loginwindow process"
+
+DT=$(date +%Y%m%d-%H%M%S)
+FINAL_SAVE=$USER_SCREENSHOT_DAY_DIR/$DT.jpg
+echo =
+echo $(date) Capturing screen into $FINAL_SAVE
+
+T=$(mktemp -t $(basename "$ME").XXXXXXXX)
+sudo launchctl bsexec $LOGINWINDOW_PID screencapture -x -t jpg $T.jpg
+
+sips -Z 640 $T.jpg --out $FINAL_SAVE 2>&1
+
+rm -f "$T"*
+
