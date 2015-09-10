@@ -3,10 +3,27 @@
 #disable job control
 trap "" SIGTSTP
 
+if [ $USER = root ]; then
+  echo "$(date) Cannot run as root"
+  $SAY Cannot run as root
+  exit 1
+fi
+
+if [ -e $HOME/.mactimer ]; then
+  . $HOME/.mactimer
+else
+  read -p "What is the name of this computer?" ans
+  echo "export COMPUTER_NAME='$ans'" > $HOME/.mactimer
+fi
+
 TIME=${1:-60}
-GREETING=${2:-Hello}
-GAME=${3:-Something fun}
-VERB=${VERB:-play}
+PERSON=${2:-$USER}
+MESSAGE=${3:-Play something fun}
+
+SESSION_DIR=$/var/tmp/Session-$(date +%Y%d%m-%H%M%S)
+mkdir -p "$SESSION_DIR"
+
+echo "$USER $PERSON $TIME $MESSAGE" > $SESSION_DIR/session_info.txt
 
 VOICE=${VOICE:-Zarvox}
 
@@ -52,17 +69,24 @@ lockit() {
   done
 }
 
-if [ $USER = root ]; then
-  echo "$(date) Cannot run as root"
-  $SAY Cannot run as root
-  exit 1
-fi
 
 # make the screen lock if this timer program exits (prevents ^C, etc)
 trap 'lockit' TERM QUIT EXIT
 
+# From http://stackoverflow.com/questions/3173131/redirect-copy-of-stdout-to-log-file-from-within-bash-script-itself
+# Redirect stdout ( > ) into a named pipe ( >() ) running "tee"
+exec > >(tee $SESSION_DIR/log.txt)
+
+# Without this, only stdout would be captured - i.e. your
+# log file would not contain any error messages.
+# SEE answer by Adam Spiers, which keeps STDERR a seperate stream -
+# I did not want to steal from him by simply adding his answer to mine.
+exec 2>&1
+
+
 echo "$(date) Stopping in $TIME minutes"
-$SAY ${GREETING}, it is time to $VERB $GAME
+echo "Saving info to $(basename $SESSION_DIR)"
+$SAY ${GREETING}, it is time to $MESSAGE
 
 START=$(date +%s)
 LAST_UPDATE=0
