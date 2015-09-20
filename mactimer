@@ -36,9 +36,12 @@ logged_in_user() {
 
 lockit() {
   trap 'echo ignored' TERM QUIT INT
+  osascript -e 'set volume 7'
+
   $SAY bye
   MAX_TRIES=5
   TRY=0
+
 
   while true; do
     if [ $((TRY++)) -gt $MAX_TRIES ]; then 
